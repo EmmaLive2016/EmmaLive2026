@@ -581,21 +581,40 @@
       try{
         const data=await apiFetch('/streams/'+channel);
         updateLiveUI(channel,data.is_live,data.whep_url);
-        // Frozen stream detection: active srcObject but no video rendering
         if(data.is_live&&data.whep_url&&authRole!=='host'){
           var vv=document.querySelector('[data-viewer-video="'+channel+'"]');
-          if(vv&&vv.srcObject&&vv.srcObject.active&&vv.videoWidth===0){
-            var connectedAt=parseInt(vv.dataset.whepConnectedAt||0);
-            var age=Date.now()-connectedAt;
+          if(vv&&vv.srcObject&&vv.srcObject.active){
             var existingPc=viewerPCs[data.whep_url];
-            if(age>8000&&existingPc&&existingPc!=='connecting'&&existingPc!=='retrying'){
-              console.log('[POLL] Frozen stream detected, forcing reconnect');
-              try{existingPc.close()}catch(_){}
-              delete viewerPCs[data.whep_url];
-              vv.srcObject=null;
-              vv.dataset.whepConnectedAt='';
-              viewerPCs[data.whep_url]='connecting';
-              whepPlayback(data.whep_url,vv).catch(function(){});
+            if(existingPc&&existingPc!=='connecting'&&existingPc!=='retrying'){
+              var now=Date.now();
+              var needsReconnect=false;
+              // Check 1: no video dimensions after grace period
+              if(vv.videoWidth===0){
+                var connectedAt=parseInt(vv.dataset.whepConnectedAt||now);
+                if(now-connectedAt>3000)needsReconnect=true;
+              }
+              // Check 2: currentTime not advancing (frozen on last frame)
+              var lastTime=vv.dataset.lastCurrentTime;
+              if(lastTime!==undefined&&lastTime!==''){
+                if((vv.currentTime-parseFloat(lastTime))<0.5){
+                  if(!vv.dataset.stalledSince)vv.dataset.stalledSince=now;
+                  if(now-parseInt(vv.dataset.stalledSince)>3000)needsReconnect=true;
+                }else{
+                  vv.dataset.stalledSince='';
+                }
+              }
+              vv.dataset.lastCurrentTime=vv.currentTime;
+              if(needsReconnect){
+                console.log('[POLL] Stream dead/frozen, forcing reconnect');
+                try{existingPc.close()}catch(_){}
+                delete viewerPCs[data.whep_url];
+                vv.srcObject=null;
+                vv.dataset.whepConnectedAt=now;
+                vv.dataset.stalledSince='';
+                vv.dataset.lastCurrentTime='';
+                viewerPCs[data.whep_url]='connecting';
+                whepPlayback(data.whep_url,vv).catch(function(){});
+              }
             }
           }
         }
