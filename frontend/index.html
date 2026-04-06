@@ -541,6 +541,7 @@
         console.log('[WHEP] Added',event.track.kind,'to combined stream, total tracks:',trackCount);
         if(trackCount>=2){
           videoEl.srcObject=combinedStream;
+          videoEl.dataset.whepConnectedAt=Date.now();
           console.log('[WHEP] Both tracks ready, srcObject set, calling play()');
           videoEl.play().catch(function(e){console.log('[WHEP] play():',e.message)});
         }
@@ -580,6 +581,24 @@
       try{
         const data=await apiFetch('/streams/'+channel);
         updateLiveUI(channel,data.is_live,data.whep_url);
+        // Frozen stream detection: active srcObject but no video rendering
+        if(data.is_live&&data.whep_url&&authRole!=='host'){
+          var vv=document.querySelector('[data-viewer-video="'+channel+'"]');
+          if(vv&&vv.srcObject&&vv.srcObject.active&&vv.videoWidth===0){
+            var connectedAt=parseInt(vv.dataset.whepConnectedAt||0);
+            var age=Date.now()-connectedAt;
+            var existingPc=viewerPCs[data.whep_url];
+            if(age>8000&&existingPc&&existingPc!=='connecting'&&existingPc!=='retrying'){
+              console.log('[POLL] Frozen stream detected, forcing reconnect');
+              try{existingPc.close()}catch(_){}
+              delete viewerPCs[data.whep_url];
+              vv.srcObject=null;
+              vv.dataset.whepConnectedAt='';
+              viewerPCs[data.whep_url]='connecting';
+              whepPlayback(data.whep_url,vv).catch(function(){});
+            }
+          }
+        }
       }catch(_){}
     }
 
