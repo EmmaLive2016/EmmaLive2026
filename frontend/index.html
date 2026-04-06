@@ -527,7 +527,13 @@
     async function whepPlayback(whepUrl,videoEl,retries){
       retries=retries||0;
       console.log('[WHEP] Connecting attempt',retries+1,'to:',whepUrl);
-      if(viewerPCs[whepUrl]){try{viewerPCs[whepUrl].close()}catch(_){}}
+      // Close any existing real PC
+      var existing=viewerPCs[whepUrl];
+      if(existing&&existing!=='connecting'&&existing!=='retrying'&&typeof existing.close==='function'){
+        try{existing.close()}catch(_){}
+      }
+      // Claim the slot immediately — prevents parallel chains
+      viewerPCs[whepUrl]='connecting';
       var pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.cloudflare.com:3478'}],bundlePolicy:'max-bundle'});
       viewerPCs[whepUrl]=pc;
       pc.addTransceiver('video',{direction:'recvonly'});
@@ -561,7 +567,14 @@
         if(!resp.ok){var et=await resp.text();console.error('[WHEP] Error:',resp.status,et);
           if(resp.status===409&&retries<8){
             console.log('[WHEP] 409 = host not broadcasting yet, retry in 4s...');
-            pc.close();viewerPCs[whepUrl]='retrying';setTimeout(function(){delete viewerPCs[whepUrl];whepPlayback(whepUrl,videoEl,retries+1).catch(function(){})},4000);return pc;
+            pc.close();
+            viewerPCs[whepUrl]='retrying';
+            setTimeout(function(){
+              if(viewerPCs[whepUrl]==='retrying'){
+                whepPlayback(whepUrl,videoEl,retries+1).catch(function(){});
+              }
+            },4000);
+            return pc;
           }
           throw new Error('WHEP:'+resp.status)}
         var ans=await resp.text();
@@ -570,8 +583,9 @@
         viewerPCs[whepUrl]=pc;
         if(retries<2){setTimeout(function(){if(videoEl.srcObject&&videoEl.videoWidth===0){console.log('[WHEP] Black screen detected after 8s, retrying...');delete viewerPCs[whepUrl];whepPlayback(whepUrl,videoEl,retries+1).catch(function(){})}},8000)}
       }catch(err){
-        console.warn('[WHEP] Failed:',err);pc.close();
-        if(retries<3){setTimeout(function(){whepPlayback(whepUrl,videoEl,retries+1).catch(function(){})},3000)}
+        console.warn('[WHEP] Failed:',err);
+        try{pc.close()}catch(_){}
+        if(viewerPCs[whepUrl]===pc)delete viewerPCs[whepUrl];
       }
       return pc;
     }
