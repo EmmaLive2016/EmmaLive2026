@@ -596,9 +596,9 @@
               // Check 2: currentTime not advancing (frozen on last frame)
               var lastTime=vv.dataset.lastCurrentTime;
               if(lastTime!==undefined&&lastTime!==''){
-                if((vv.currentTime-parseFloat(lastTime))<0.5){
+                if((vv.currentTime-parseFloat(lastTime))<0.05){
                   if(!vv.dataset.stalledSince)vv.dataset.stalledSince=now;
-                  if(now-parseInt(vv.dataset.stalledSince)>3000)needsReconnect=true;
+                  if(now-parseInt(vv.dataset.stalledSince)>1500)needsReconnect=true;
                 }else{
                   vv.dataset.stalledSince='';
                 }
@@ -732,21 +732,20 @@
     /* ── WebSocket ─────────────────────────────────────── */
     function connectWs(channel){
       if(wsConnections[channel])return;
-      const configured=(window.EMMA_BACKEND_ORIGIN||'').replace(/\/$/,'');
-      const base=configured||((location.hostname==='localhost'||location.hostname==='127.0.0.1')?location.origin:'');
-      if(!base)return;
-      const wsUrl=base.replace(/^http/,'ws')+'/ws/comments/'+channel;
+      const wsUrl='wss://emma-fastapi.onrender.com/ws/comments/'+channel;
       try{
         const ws=new WebSocket(wsUrl);
+        ws.onopen=()=>console.log('[WS] Connected:',channel);
         ws.onmessage=event=>{
           const msg=JSON.parse(event.data);
           if(msg.type==='comment_created'||msg.type==='comment_deleted'||msg.type==='comments_cleared')loadComments(channel,true);
-          if(msg.type==='stream_started')updateLiveUI(channel,true,msg.whep_url);
-          if(msg.type==='stream_stopped')updateLiveUI(channel,false,null);
+          if(msg.type==='stream_started'){console.log('[WS] Stream started');updateLiveUI(channel,true,msg.whep_url)}
+          if(msg.type==='stream_stopped'){console.log('[WS] Stream stopped');updateLiveUI(channel,false,null)}
         };
-        ws.onclose=()=>{delete wsConnections[channel];setTimeout(()=>connectWs(channel),5000)};
+        ws.onclose=()=>{delete wsConnections[channel];setTimeout(()=>connectWs(channel),3000)};
+        ws.onerror=(e)=>console.warn('[WS] Error:',e);
         wsConnections[channel]=ws;
-      }catch(_){}
+      }catch(e){console.warn('[WS] Failed to connect:',e)}
     }
 
     /* ── File uploads ──────────────────────────────────── */
@@ -834,7 +833,7 @@
     renderEmpty(shortsGrid,'No Shorts uploaded yet.');
     renderEmpty(photoGallery,'No photos uploaded yet.');
     syncAuthUI();handleHashRoute();loadAllData();
-    setInterval(checkAllStreams,5000);
+    setInterval(checkAllStreams,15000);
     setInterval(()=>CHANNELS.forEach(ch=>loadComments(ch)),COMMENT_REFRESH_MS);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)CHANNELS.forEach(ch=>loadComments(ch,true))});
   })();
