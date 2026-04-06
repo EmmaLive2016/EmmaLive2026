@@ -579,6 +579,7 @@
           throw new Error('WHEP:'+resp.status)}
         var ans=await resp.text();
         console.log('[WHEP] Got answer, length:',ans.length);
+        if(pc.signalingState==='closed'){return pc}
         await pc.setRemoteDescription({type:'answer',sdp:ans});
         viewerPCs[whepUrl]=pc;
         if(retries<2){setTimeout(function(){if(videoEl.srcObject&&videoEl.videoWidth===0){console.log('[WHEP] Black screen detected after 8s, retrying...');delete viewerPCs[whepUrl];whepPlayback(whepUrl,videoEl,retries+1).catch(function(){})}},8000)}
