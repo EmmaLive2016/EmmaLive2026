@@ -598,17 +598,17 @@
           viewerVideo.style.display='block';
           var vc=document.querySelector('[data-viewer-controls="'+channel+'"]');
           if(vc)vc.classList.add('show');
-          if(!viewerPCs[whepUrl]){
+          var existingPc=viewerPCs[whepUrl];
+          var isSentinel=existingPc==='connecting'||existingPc==='retrying';
+          var streamDead=!viewerVideo.srcObject||!viewerVideo.srcObject.active;
+          var pcDead=existingPc&&!isSentinel&&
+                     (existingPc.connectionState==='failed'||existingPc.connectionState==='closed'||existingPc.connectionState==='disconnected');
+          var streamDeadWithRealPc=streamDead&&existingPc&&!isSentinel;
+          if(!existingPc||pcDead||streamDeadWithRealPc){
+            if(existingPc&&!isSentinel&&typeof existingPc.close==='function'){try{existingPc.close()}catch(_){}}
+            delete viewerPCs[whepUrl];
             viewerPCs[whepUrl]='connecting';
             whepPlayback(whepUrl,viewerVideo).catch(function(e){console.warn('WHEP error:',e);delete viewerPCs[whepUrl]});
-          } else if(viewerPCs[whepUrl]!=='connecting'&&viewerPCs[whepUrl]!=='retrying'){
-            var st=viewerPCs[whepUrl].connectionState;
-            if(st==='failed'||st==='closed'||st==='disconnected'){
-              try{viewerPCs[whepUrl].close()}catch(_){}
-              delete viewerPCs[whepUrl];
-              viewerPCs[whepUrl]='connecting';
-              whepPlayback(whepUrl,viewerVideo).catch(function(e){console.warn('WHEP error:',e);delete viewerPCs[whepUrl]});
-            }
           }
         }
         if(placeholder)placeholder.style.display='none';
@@ -790,7 +790,7 @@
     renderEmpty(shortsGrid,'No Shorts uploaded yet.');
     renderEmpty(photoGallery,'No photos uploaded yet.');
     syncAuthUI();handleHashRoute();loadAllData();
-    setInterval(checkAllStreams,15000);
+    setInterval(checkAllStreams,5000);
     setInterval(()=>CHANNELS.forEach(ch=>loadComments(ch)),COMMENT_REFRESH_MS);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)CHANNELS.forEach(ch=>loadComments(ch,true))});
   })();
