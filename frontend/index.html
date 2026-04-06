@@ -684,6 +684,8 @@
     }
 
     function stopCamera(channel){
+      const stopBtn=document.querySelector('[data-stop-live="'+channel+'"]');
+      const wasLive=stopBtn&&!stopBtn.classList.contains('hidden');
       const state=cameraState[channel];
       if(state){if(state.stream)state.stream.getTracks().forEach(t=>t.stop());if(state.pc){state.pc.close();state.pc=null}}
       delete cameraState[channel];
@@ -693,6 +695,10 @@
       if(video)video.srcObject=null;
       if(placeholder)placeholder.style.display='grid';
       if(badge)badge.classList.remove('show');
+      const goBtn=document.querySelector('[data-go-live="'+channel+'"]');
+      if(goBtn)goBtn.classList.remove('hidden');
+      if(stopBtn)stopBtn.classList.add('hidden');
+      if(wasLive)stopLive(channel);
     }
 
     async function goLive(channel){
