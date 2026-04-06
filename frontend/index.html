@@ -636,7 +636,7 @@
       }catch(_){}
     }
 
-    function updateLiveUI(channel,isLive,whepUrl){
+    function updateLiveUI(channel,isLive,whepUrl,force){
       document.querySelectorAll('[data-live-status="'+channel+'"]').forEach(el=>{
         el.textContent=isLive?'🔴 LIVE':'Offline';
         el.style.background=isLive?'rgba(255,58,58,.2)':'';
@@ -668,7 +668,7 @@
         if(placeholder)placeholder.style.display='none';
       }else if(!isLive&&authRole!=='host'){
         if(viewerVideo){
-          if(viewerVideo.srcObject&&viewerVideo.srcObject.active){return}
+          if(!force&&viewerVideo.srcObject&&viewerVideo.srcObject.active){return}
           Object.keys(viewerPCs).forEach(function(url){
             var p=viewerPCs[url];
             if(p&&p!=='connecting'&&p!=='retrying'&&typeof p.close==='function'){try{p.close()}catch(_){}}
@@ -785,8 +785,8 @@
         ws.onmessage=event=>{
           const msg=JSON.parse(event.data);
           if(msg.type==='comment_created'||msg.type==='comment_deleted'||msg.type==='comments_cleared')loadComments(channel,true);
-          if(msg.type==='stream_started'){console.log('[WS] Stream started');updateLiveUI(channel,true,msg.whep_url)}
-          if(msg.type==='stream_stopped'){console.log('[WS] Stream stopped');updateLiveUI(channel,false,null)}
+          if(msg.type==='stream_started'){console.log('[WS] Stream started');updateLiveUI(channel,true,msg.whep_url,true)}
+          if(msg.type==='stream_stopped'){console.log('[WS] Stream stopped');updateLiveUI(channel,false,null,true)}
         };
         ws.onclose=()=>{delete wsConnections[channel];setTimeout(()=>connectWs(channel),3000)};
         ws.onerror=(e)=>console.warn('[WS] Error:',e);
