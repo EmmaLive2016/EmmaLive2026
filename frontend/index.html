@@ -688,9 +688,27 @@
     /* ── Camera (host) ─────────────────────────────────── */
     async function startCamera(channel){
       try{
-        if(!cameraState[channel]){
+        const state=cameraState[channel];
+        // If already streaming but camera was turned off, just restore video
+        if(state&&state.cameraOff&&state.pc&&state.pc.connectionState!=='closed'){
+          const newStream=await navigator.mediaDevices.getUserMedia({video:true,audio:false});
+          const newVideoTrack=newStream.getVideoTracks()[0];
+          if(newVideoTrack){
+            const sender=state.pc.getSenders().find(function(s){return s.track&&s.track.kind==='video'});
+            if(sender)await sender.replaceTrack(newVideoTrack);
+            state.stream.getVideoTracks().forEach(function(t){state.stream.removeTrack(t)});
+            state.stream.addTrack(newVideoTrack);
+            const video=document.querySelector('[data-camera-preview="'+channel+'"]');
+            const placeholder=document.querySelector('[data-camera-placeholder="'+channel+'"]');
+            if(video){video.srcObject=state.stream;video.play().catch(function(){})}
+            if(placeholder)placeholder.style.display='none';
+            state.cameraOff=false;
+          }
+          return;
+        }
+        if(!state){
           const stream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
-          cameraState[channel]={stream,pc:null};
+          cameraState[channel]={stream,pc:null,cameraOff:false};
         }
         const video=document.querySelector('[data-camera-preview="'+channel+'"]');
         const placeholder=document.querySelector('[data-camera-placeholder="'+channel+'"]');
@@ -700,21 +718,33 @@
     }
 
     function stopCamera(channel){
-      const stopBtn=document.querySelector('[data-stop-live="'+channel+'"]');
-      const wasLive=stopBtn&&!stopBtn.classList.contains('hidden');
       const state=cameraState[channel];
-      if(state){if(state.stream)state.stream.getTracks().forEach(t=>t.stop());if(state.pc){state.pc.close();state.pc=null}}
-      delete cameraState[channel];
-      const video=document.querySelector('[data-camera-preview="'+channel+'"]');
-      const placeholder=document.querySelector('[data-camera-placeholder="'+channel+'"]');
-      const badge=document.querySelector('[data-live-badge="'+channel+'"]');
-      if(video)video.srcObject=null;
-      if(placeholder)placeholder.style.display='grid';
-      if(badge)badge.classList.remove('show');
-      const goBtn=document.querySelector('[data-go-live="'+channel+'"]');
-      if(goBtn)goBtn.classList.remove('hidden');
-      if(stopBtn)stopBtn.classList.add('hidden');
-      if(wasLive)stopLive(channel);
+      if(!state)return;
+      const isStreaming=state.pc&&state.pc.connectionState!=='closed';
+      if(isStreaming){
+        // Stop video only — keep audio + WHIP alive for audio-only stream
+        state.stream.getVideoTracks().forEach(function(t){t.stop()});
+        state.cameraOff=true;
+        const video=document.querySelector('[data-camera-preview="'+channel+'"]');
+        const placeholder=document.querySelector('[data-camera-placeholder="'+channel+'"]');
+        if(video)video.srcObject=null;
+        if(placeholder)placeholder.style.display='grid';
+      }else{
+        // Not streaming — full stop and reset
+        if(state.stream)state.stream.getTracks().forEach(function(t){t.stop()});
+        if(state.pc){state.pc.close();state.pc=null}
+        delete cameraState[channel];
+        const video=document.querySelector('[data-camera-preview="'+channel+'"]');
+        const placeholder=document.querySelector('[data-camera-placeholder="'+channel+'"]');
+        const badge=document.querySelector('[data-live-badge="'+channel+'"]');
+        if(video)video.srcObject=null;
+        if(placeholder)placeholder.style.display='grid';
+        if(badge)badge.classList.remove('show');
+        const goBtn=document.querySelector('[data-go-live="'+channel+'"]');
+        const stopBtn=document.querySelector('[data-stop-live="'+channel+'"]');
+        if(goBtn)goBtn.classList.remove('hidden');
+        if(stopBtn)stopBtn.classList.add('hidden');
+      }
     }
 
     async function goLive(channel){
