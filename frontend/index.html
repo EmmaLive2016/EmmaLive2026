@@ -221,6 +221,9 @@
 <button class="btn btn-danger" data-camera-stop="studio-emma" type="button">Turn Off Camera</button>
 <button class="btn btn-secondary" data-go-live="studio-emma" type="button">Go Live</button>
 <button class="btn btn-danger hidden" data-stop-live="studio-emma" type="button">Stop Stream</button>
+<button class="btn btn-ghost" data-host-mute="studio-emma" type="button">🔇 Mute</button>
+<button class="btn btn-ghost" data-expand="studio-emma" type="button">⛶ Expand</button>
+<button class="btn btn-ghost" data-popout-stream="studio-emma" type="button">↗ Pop Out</button>
 </div>
 <div class="comment-safe-note" style="margin-top:14px;">Profanity blocking is enabled for comments on this channel.</div>
 </article>
@@ -586,10 +589,29 @@
       const viewerVideo=document.querySelector('[data-viewer-video="'+channel+'"]');
       const placeholder=document.querySelector('[data-camera-placeholder="'+channel+'"]');
       if(isLive&&whepUrl&&authRole!=='host'){
-        if(viewerVideo){viewerVideo.style.display='block';var vc=document.querySelector('[data-viewer-controls="'+channel+'"]');if(vc)vc.classList.add('show');if(!viewerPCs[whepUrl]){whepPlayback(whepUrl,viewerVideo).catch(function(e){console.warn('WHEP error:',e)})}}
+        if(viewerVideo){
+          viewerVideo.style.display='block';
+          var vc=document.querySelector('[data-viewer-controls="'+channel+'"]');
+          if(vc)vc.classList.add('show');
+          if(!viewerPCs[whepUrl]){
+            viewerPCs[whepUrl]='connecting';
+            whepPlayback(whepUrl,viewerVideo).catch(function(e){console.warn('WHEP error:',e);delete viewerPCs[whepUrl]});
+          }
+        }
         if(placeholder)placeholder.style.display='none';
       }else if(!isLive&&authRole!=='host'){
-        if(viewerVideo){viewerVideo.style.display='none';viewerVideo.srcObject=null;var vc2=document.querySelector('[data-viewer-controls="'+channel+'"]');if(vc2)vc2.classList.remove('show')}
+        if(viewerVideo){
+          if(viewerVideo.srcObject&&viewerVideo.srcObject.active){return}
+          Object.keys(viewerPCs).forEach(function(url){
+            var p=viewerPCs[url];
+            if(p&&p!=='connecting'&&p!=='retrying'&&typeof p.close==='function'){try{p.close()}catch(_){}}
+            delete viewerPCs[url];
+          });
+          viewerVideo.style.display='none';
+          viewerVideo.srcObject=null;
+          var vc2=document.querySelector('[data-viewer-controls="'+channel+'"]');
+          if(vc2)vc2.classList.remove('show');
+        }
         if(placeholder)placeholder.style.display='grid';
       }
     }
@@ -688,6 +710,7 @@
       const cb=e.target.closest('[data-clear-comments]');
       if(cb){try{await apiFetch('/comments/'+cb.getAttribute('data-clear-comments'),{method:'DELETE'});loadComments(cb.getAttribute('data-clear-comments'))}catch(_){}return}
       const um=e.target.closest('[data-unmute]');if(um){var ch=um.getAttribute('data-unmute');var vv=document.querySelector('[data-viewer-video="'+ch+'"]');if(vv){vv.muted=!vv.muted;console.log('[AUDIO] muted=',vv.muted);um.textContent=vv.muted?'🔇 Unmute':'🔊 Sound on'}return}
+      const hm=e.target.closest('[data-host-mute]');if(hm){var hch=hm.getAttribute('data-host-mute');var hv=document.querySelector('[data-camera-preview="'+hch+'"]');if(hv){hv.muted=!hv.muted;hm.textContent=hv.muted?'🔇 Mute':'🔊 Unmute'}return}
       const ex=e.target.closest('[data-expand]');if(ex){var ech=ex.getAttribute('data-expand');expandStream(ech);return}
       const po=e.target.closest('[data-popout-stream]');if(po){var pch=po.getAttribute('data-popout-stream');popoutStream(pch);return}
       const cs=e.target.closest('[data-camera-start]');if(cs)return startCamera(cs.getAttribute('data-camera-start'));
@@ -704,12 +727,13 @@
     var fsUnmute=document.getElementById('fsUnmute');
 
     function expandStream(channel){
-      var src=document.querySelector('[data-viewer-video="'+channel+'"]');
-      if(!src||!src.srcObject){src=document.querySelector('[data-camera-preview="'+channel+'"]')}
-      if(!src||!src.srcObject){alert('No active stream to expand.');return}
-      fsVideo.srcObject=src.srcObject;
+      var src=document.querySelector('[data-camera-preview="'+channel+'"]');
+      if(!src||!src.srcObject||!src.srcObject.active){src=document.querySelector('[data-viewer-video="'+channel+'"]')}
+      if(!src||!src.srcObject||!src.srcObject.active){alert('No active stream to expand.');return}
+      fsVideo.srcObject=src.srcObject.clone?src.srcObject.clone():src.srcObject;
       fsVideo.muted=true;
       fsVideo.play().catch(function(){});
+      if(src.paused)src.play().catch(function(){});
       fsOverlay.classList.add('show');
       fsUnmute.textContent='🔇 Tap to unmute';
       currentFsChannel=channel;
@@ -717,6 +741,11 @@
     fsClose.addEventListener('click',function(){
       fsOverlay.classList.remove('show');
       fsVideo.srcObject=null;
+      if(currentFsChannel){
+        var src=document.querySelector('[data-camera-preview="'+currentFsChannel+'"]');
+        if(!src||!src.srcObject)src=document.querySelector('[data-viewer-video="'+currentFsChannel+'"]');
+        if(src&&src.srcObject&&src.paused)src.play().catch(function(){});
+      }
       currentFsChannel=null;
     });
     fsUnmute.addEventListener('click',function(){
@@ -725,9 +754,9 @@
     });
 
     function popoutStream(channel){
-      var src=document.querySelector('[data-viewer-video="'+channel+'"]');
-      if(!src||!src.srcObject){src=document.querySelector('[data-camera-preview="'+channel+'"]')}
-      if(!src||!src.srcObject){alert('No active stream to pop out.');return}
+      var src=document.querySelector('[data-camera-preview="'+channel+'"]');
+      if(!src||!src.srcObject||!src.srcObject.active){src=document.querySelector('[data-viewer-video="'+channel+'"]')}
+      if(!src||!src.srcObject||!src.srcObject.active){alert('No active stream to pop out.');return}
       var w=window.open('','_blank','width=960,height=540');
       if(!w)return;
       w.document.title='Live: '+channel.replace('studio-','');
@@ -735,9 +764,10 @@
       var v=w.document.createElement('video');
       v.style.cssText='width:100%;height:100%;object-fit:contain';
       v.autoplay=true;v.muted=false;v.playsInline=true;
-      v.srcObject=src.srcObject;
+      v.srcObject=src.srcObject.clone?src.srcObject.clone():src.srcObject;
       w.document.body.appendChild(v);
       v.play().catch(function(){v.muted=true;v.play()});
+      if(src.paused)src.play().catch(function(){});
     }
 
     /* ── Init ──────────────────────────────────────────── */
